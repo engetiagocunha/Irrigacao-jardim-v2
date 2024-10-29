@@ -59,61 +59,61 @@ void deviceControl(int opc, char command) {
   switch (opc) {
     case 1:
       // Lógica para o Relé 1
-      if (command == '0') {
+      if (command == '1') {
         digitalWrite(RELAY_PIN_1, LOW);
-        powerState[0] = 0;  // Atualiza o estado do relé para desligado
-        client.publish(device1StateTopic, "0");
-        Serial.println("DEVICE1 Desligado");
+        powerState[0] = 0;  // Atualiza o estado do relé para Ligado
+        client.publish(device1StateTopic, "1");
+        Serial.println("DEVICE1 Ligado");
       } else {
         digitalWrite(RELAY_PIN_1, HIGH);
         powerState[0] = 1;  // Atualiza o estado do relé para ligado
-        client.publish(device1StateTopic, "1");
-        Serial.println("DEVICE1 Ligado");
+        client.publish(device1StateTopic, "0");
+        Serial.println("DEVICE1 Desligado");
       }
       break;
 
     case 2:
       // Lógica para o Relé 2
-      if (command == '0') {
+      if (command == '1') {
         digitalWrite(RELAY_PIN_2, LOW);
         powerState[1] = 0;  // Atualiza o estado do relé para desligado
         client.publish(device2StateTopic, "0");
-        Serial.println("DEVICE2 Desligado");
+        Serial.println("DEVICE2 Ligado");
       } else {
         digitalWrite(RELAY_PIN_2, HIGH);
         powerState[1] = 1;  // Atualiza o estado do relé para ligado
-        client.publish(device2StateTopic, "1");
-        Serial.println("DEVICE2 Ligado");
+        client.publish(device2StateTopic, "0");
+        Serial.println("DEVICE2 Desligado");
       }
       break;
 
     case 3:
       // Lógica para o Relé 3
-      if (command == '0') {
+      if (command == '1') {
         digitalWrite(RELAY_PIN_3, LOW);
         powerState[2] = 0;  // Atualiza o estado do relé para desligado
-        client.publish(device3StateTopic, "0");
-        Serial.println("DEVICE3 Desligado");
+        client.publish(device3StateTopic, "1");
+        Serial.println("DEVICE3 Ligado");
       } else {
         digitalWrite(RELAY_PIN_3, HIGH);
         powerState[2] = 1;  // Atualiza o estado do relé para ligado
-        client.publish(device3StateTopic, "1");
-        Serial.println("DEVICE3 Ligado");
+        client.publish(device3StateTopic, "0");
+        Serial.println("DEVICE3 Desligado");
       }
       break;
 
     case 4:
       // Lógica para o Relé 4
-      if (command == '0') {
+      if (command == '1') {
         digitalWrite(RELAY_PIN_4, LOW);
         powerState[3] = 0;  // Atualiza o estado do relé para desligado
-        client.publish(device4StateTopic, "0");
-        Serial.println("DEVICE4 Desligado");
+        client.publish(device4StateTopic, "1");
+        Serial.println("DEVICE4 Ligado");
       } else {
         digitalWrite(RELAY_PIN_4, HIGH);
         powerState[3] = 1;  // Atualiza o estado do relé para ligado
-        client.publish(device4StateTopic, "1");
-        Serial.println("DEVICE4 Ligado");
+        client.publish(device4StateTopic, "0");
+        Serial.println("DEVICE4 Desligado");
       }
       break;
 
