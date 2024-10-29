@@ -27,9 +27,10 @@ const char* soilMoistureTopic = "/HaOS/esp01/soilMoisture";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-Preferences preferences;  // Instância da classe Preferences
-Sensors sensors;  // Instância da classe Sensors
-Ticker sensorTicker;  // Instância do Ticker
+Preferences preferences;   // Instância da classe Preferences
+Sensors sensors;           // Instância da classe Sensors
+Ticker sensorTicker;       // Instância do Ticker
+Ticker stateUpdateTicker;  // Instancia o Ticker
 
 const char* relayKeys[4] = { "relay1", "relay2", "relay3", "relay4" };  // Chaves para os relés
 int powerState[4] = { 1, 1, 1, 1 };                                     // Supondo que os relés estão desligados inicialmente
@@ -59,62 +60,42 @@ void deviceControl(int opc, char command) {
   switch (opc) {
     case 1:
       // Lógica para o Relé 1
-      if (command == '1') {
-        digitalWrite(RELAY_PIN_1, LOW);
-        powerState[0] = 0;  // Atualiza o estado do relé para Ligado
-        client.publish(device1StateTopic, "1");
-        Serial.println("DEVICE1 Ligado");
-      } else {
-        digitalWrite(RELAY_PIN_1, HIGH);
-        powerState[0] = 1;  // Atualiza o estado do relé para ligado
-        client.publish(device1StateTopic, "0");
-        Serial.println("DEVICE1 Desligado");
-      }
+      digitalWrite(RELAY_PIN_1, (command == '0') ? LOW : HIGH);
+      powerState[0] = (command == '0') ? 0 : 1;  // Atualiza o estado do relé
+
+      // Publica o estado atualizado
+      client.publish(device1StateTopic, (command == '0') ? "0" : "1");
+      Serial.printf("DEVICE1 %s\n", (command == '0') ? "Ligado" : "Desligado");
       break;
 
     case 2:
       // Lógica para o Relé 2
-      if (command == '1') {
-        digitalWrite(RELAY_PIN_2, LOW);
-        powerState[1] = 0;  // Atualiza o estado do relé para desligado
-        client.publish(device2StateTopic, "0");
-        Serial.println("DEVICE2 Ligado");
-      } else {
-        digitalWrite(RELAY_PIN_2, HIGH);
-        powerState[1] = 1;  // Atualiza o estado do relé para ligado
-        client.publish(device2StateTopic, "0");
-        Serial.println("DEVICE2 Desligado");
-      }
+      digitalWrite(RELAY_PIN_2, (command == '0') ? LOW : HIGH);
+      powerState[1] = (command == '0') ? 0 : 1;  // Atualiza o estado do relé
+
+      // Publica o estado atualizado
+      client.publish(device2StateTopic, (command == '0') ? "0" : "1");
+      Serial.printf("DEVICE2 %s\n", (command == '0') ? "Ligado" : "Desligado");
       break;
 
     case 3:
       // Lógica para o Relé 3
-      if (command == '1') {
-        digitalWrite(RELAY_PIN_3, LOW);
-        powerState[2] = 0;  // Atualiza o estado do relé para desligado
-        client.publish(device3StateTopic, "1");
-        Serial.println("DEVICE3 Ligado");
-      } else {
-        digitalWrite(RELAY_PIN_3, HIGH);
-        powerState[2] = 1;  // Atualiza o estado do relé para ligado
-        client.publish(device3StateTopic, "0");
-        Serial.println("DEVICE3 Desligado");
-      }
+      digitalWrite(RELAY_PIN_3, (command == '0') ? LOW : HIGH);
+      powerState[2] = (command == '0') ? 0 : 1;  // Atualiza o estado do relé
+
+      // Publica o estado atualizado
+      client.publish(device3StateTopic, (command == '0') ? "0" : "1");
+      Serial.printf("DEVICE3 %s\n", (command == '0') ? "Ligado" : "Desligado");
       break;
 
     case 4:
       // Lógica para o Relé 4
-      if (command == '1') {
-        digitalWrite(RELAY_PIN_4, LOW);
-        powerState[3] = 0;  // Atualiza o estado do relé para desligado
-        client.publish(device4StateTopic, "1");
-        Serial.println("DEVICE4 Ligado");
-      } else {
-        digitalWrite(RELAY_PIN_4, HIGH);
-        powerState[3] = 1;  // Atualiza o estado do relé para ligado
-        client.publish(device4StateTopic, "0");
-        Serial.println("DEVICE4 Desligado");
-      }
+      digitalWrite(RELAY_PIN_4, (command == '0') ? LOW : HIGH);
+      powerState[3] = (command == '0') ? 0 : 1;  // Atualiza o estado do relé
+
+      // Publica o estado atualizado
+      client.publish(device4StateTopic, (command == '0') ? "0" : "1");
+      Serial.printf("DEVICE4 %s\n", (command == '0') ? "Ligado" : "Desligado");
       break;
 
     default:
@@ -122,7 +103,6 @@ void deviceControl(int opc, char command) {
       break;  // Retorna se a opção não for válida
   }
 }
-
 
 
 // Callback para receber comandos do MQTT
@@ -179,6 +159,15 @@ void updateSensors() {
   client.publish(soilMoistureTopic, String(sensors.getSoilMoisture()).c_str());
 }
 
+// Função para publicar o estado de cada dispositivo
+void publishStates() {
+  client.publish("/HaOS/esp01/device1/state", powerState[0] == 0 ? "0" : "1");
+  client.publish("/HaOS/esp01/device2/state", powerState[1] == 0 ? "0" : "1");
+  client.publish("/HaOS/esp01/device3/state", powerState[2] == 0 ? "0" : "1");
+  client.publish("/HaOS/esp01/device4/state", powerState[3] == 0 ? "0" : "1");
+  Serial.println("Estados dos dispositivos publicados.");
+}
+
 void setup() {
   Serial.begin(115200);
   setupGPIOs();     // Configura os pinos GPIO
@@ -190,6 +179,7 @@ void setup() {
 
   // Inicia o Ticker para atualizar os sensores a cada 10 segundos
   sensorTicker.attach(10, updateSensors);  // Chama updateSensors a cada 10 segundos
+  stateUpdateTicker.attach(5, publishStates);  // Intervalo em segundos
 
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
