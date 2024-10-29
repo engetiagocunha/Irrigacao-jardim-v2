@@ -30,7 +30,7 @@ const int numTouchButtons = 3;
 extern const int devicePins[numDevices];
 extern const int touchButtonPins[numTouchButtons];
 
-//extern bool powerState[numDevices];
+extern bool deviceStates[numDevices];
 extern bool lastTouchStates[numTouchButtons];
 
 extern const int capacitanceThreshold;
