@@ -31,7 +31,7 @@ void setup() {
   timeClient.begin();  // Inicializa o NTP Client
 
   // Inicializa o display LCD
-  lcd.begin(16, 2);
+  lcd.init();  
   lcd.backlight();      // Liga a luz de fundo do LCD
   lcd.setCursor(0, 0);  // Posiciona o cursor na primeira linha e coluna
   lcd.print("Sistema Off");

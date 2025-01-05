@@ -21,14 +21,17 @@ void setupSensors() {
 void readDHT() {
   umidade = dht.readHumidity();         // Lê a umidade
   temperatura = dht.readTemperature();  // Lê a temperatura em Celsius
-
+  if (isnan(temperatura) || isnan(umidade)) {
+    Serial.println("Erro ao ler o DHT!");
+    temperatura = 0;
+    umidade = 0;
+  }
 }
 
 // Função para ler o sensor de umidade do solo
 void readSoilMoisture() {
   soilMoistureValue = analogRead(SOIL_SENSOR_PIN);         // Lê o valor analógico do sensor
   soilmoisture = map(soilMoistureValue, 1023, 0, 0, 100);  // Mapeia o valor para uma porcentagem de 0% a 100%
-
 }
 
 #endif  // SENSORS_HPP
