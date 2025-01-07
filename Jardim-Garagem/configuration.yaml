@@ -1,0 +1,53 @@
+mqtt:
+  switch:
+    - name: "Device 1"
+      state_topic: "/HaOS/esp01/device1/state"
+      command_topic: "/HaOS/esp01/device1/set"
+      payload_on: "0"           
+      payload_off: "1"         
+      state_on: "0"             
+      state_off: "1"           
+      qos: 1                    
+
+    - name: "Device 2"
+      state_topic: "/HaOS/esp01/device2/state"
+      command_topic: "/HaOS/esp01/device2/set"
+      payload_on: "0"
+      payload_off: "1"
+      state_on: "0"
+      state_off: "1"
+      qos: 1
+
+    - name: "Device 3"
+      state_topic: "/HaOS/esp01/device3/state"
+      command_topic: "/HaOS/esp01/device3/set"
+      payload_on: "0"
+      payload_off: "1"
+      state_on: "0"
+      state_off: "1"
+      qos: 1
+
+    - name: "Device 4"
+      state_topic: "/HaOS/esp01/device4/state"
+      command_topic: "/HaOS/esp01/device4/set"
+      payload_on: "0"
+      payload_off: "1"
+      state_on: "0"
+      state_off: "1"
+      qos: 1
+
+  sensor:
+    - name: "Temperatura"
+      state_topic: "/HaOS/esp01/temperature"
+      unit_of_measurement: "°C"
+      qos: 1
+
+    - name: "Umidade"
+      state_topic: "/HaOS/esp01/humidity"
+      unit_of_measurement: "%"
+      qos: 1
+
+    - name: "Umidade do Solo"
+      state_topic: "/HaOS/esp01/soilMoisture"
+      unit_of_measurement: "%"
+      qos: 1
