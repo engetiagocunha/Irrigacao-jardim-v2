@@ -112,16 +112,9 @@ body {
 }
 
 .grid { 
-  display: grid; 
-  grid-template-columns: repeat(2, 1fr); 
-  grid-auto-rows: 180px; 
-  gap: 2px; 
-  justify-items: center;
-  padding: 10px;
+  display: flex; 
+  justify-content: center;
   margin: 20px;
-  background-color: #D3D3D3; 
-  border-radius: 10px;  
-  box-shadow: 0px 2px 2px 0px rgba(0, 0, 0, 0.2);
 }
 
 .grid-item { 
@@ -131,14 +124,6 @@ body {
   justify-content: center;
   width: 100%; 
 }
-
-.grid-item p {
-  font-size: 18px; 
-  margin-bottom: 10px; 
-  margin-top: 0; 
-  margin-bottom: 50px;
-}
-
 
 .switch {
   position: relative;
@@ -189,79 +174,6 @@ input:checked + .slider:before {
   display: none;
 }
 
-.config-container {
-  background-color: #D3D3D3;
-  padding: 10px;
-  margin: 20px;
-  border-radius: 10px;
-  box-shadow: 0px 2px 2px 0px rgba(0, 0, 0, 0.2);
-}
-
-.config-container h1 {
-  font-size: 24px;
-  color: #333;
-  margin-bottom: 20px;
-}
-
-.config-container form {
-  display: flex;
-  flex-direction: column;
-}
-
-.config-container label {
-  font-size: 18px;
-  margin-bottom: 5px;
-  color: #333;
-}
-
-.config-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.config-row input {
-  width: 48%;
-  padding: 8px;
-  font-size: 16px;
-  border-radius: 5px;
-  border: 1px solid #aaa;
-}
-
-.dias-semana-container {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.dias-semana-container label {
-  font-size: 16px;
-  margin-right: 10px;
-}
-
-.dias-semana-container input[type="checkbox"] {
-  margin-right: 5px;
-}
-
-button {
-  padding: 10px;
-  font-size: 18px;
-  background-color: #f9d835;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-}
-
-button:hover {
-  background-color: #e0c024;
-}
-
-button:active {
-  background-color: #c7aa20;
-}
-
-
 </style>
 </head>
 <body>
@@ -296,38 +208,14 @@ button:active {
 </div>
 
 <div class="grid">
-  <!-- Os botões dos dispositivos serão gerados dinamicamente pelo JavaScript -->
-</div>
-
-<div class="config-container">
-  <h1>Configuração do Timer</h1>
-  <form id="configForm" action="/" method="POST">
-    <div class="dias-semana-container">
-      %DIAS_DA_SEMANA%
-    </div>
-
-    <div class="config-row">
-      <label>Hora de Início:</label>
-      <input type="number" name="horaInicio" min="0" max="23" value="%HORA_INICIO%">
-    </div>
-
-    <div class="config-row">
-      <label>Minuto de Início:</label>
-      <input type="number" name="minutoInicio" min="0" max="59" value="%MINUTO_INICIO%">
-    </div>
-
-    <div class="config-row">
-      <label>Hora de Término:</label>
-      <input type="number" name="horaFim" min="0" max="23" value="%HORA_FIM%">
-    </div>
-
-    <div class="config-row">
-      <label>Minuto de Término:</label>
-      <input type="number" name="minutoFim" min="0" max="59" value="%MINUTO_FIM%">
-    </div>
-
-    <button type="submit">Salvar</button>
-  </form>
+  <!-- Único botão para controle do dispositivo -->
+  <div class="grid-item">
+    <p>Dispositivo</p>
+    <label class="switch">
+      <input type="checkbox" id="toggleBtn" onchange="toggleDevice()">
+      <span class="slider"></span>
+    </label>
+  </div>
 </div>
 
 <script>
@@ -352,14 +240,13 @@ ws.onerror = function() {
 ws.onmessage = function(event) {
   let data = JSON.parse(event.data);
   
-  // Atualiza os estados dos botões de acordo com os dados recebidos
-  for (let i = 0; i < %NUM_DEVICES%; i++) {
-    let btn = document.getElementById('toggleBtn' + i);
-    if (btn) {
-      btn.checked = data.deviceStates[i];
-      btn.disabled = !isConnected;
-    }
+  // Atualiza o estado do botão de controle
+  let btn = document.getElementById('toggleBtn');
+  if (btn) {
+    btn.checked = data.deviceState; // Atualiza o estado do botão
+    btn.disabled = !isConnected;
   }
+
   document.getElementById('temperature').textContent = data.temperature.toFixed(1);
   document.getElementById('humidity').textContent = data.humidity.toFixed(1);
   if (document.getElementById('soilMoisture')) {
@@ -371,54 +258,18 @@ function updateConnectionStatus() {
   const statusMessage = document.getElementById('connection-status');
   if (isConnected) {
     statusMessage.style.display = 'none';
-    enableAllButtons();
   } else {
     statusMessage.style.display = 'block';
-    disableAllButtons();
   }
 }
 
-function disableAllButtons() {
-  for (let i = 0; i < %NUM_DEVICES%; i++) {
-    let btn = document.getElementById('toggleBtn' + i);
-    if (btn) btn.disabled = true;
-  }
-}
-
-function enableAllButtons() {
-  for (let i = 0; i < %NUM_DEVICES%; i++) {
-    let btn = document.getElementById('toggleBtn' + i);
-    if (btn) btn.disabled = false;
-  }
-}
-
-function toggleDevice(index) {
+function toggleDevice() {
   if (isConnected) {
-    ws.send(index.toString());
+    ws.send('toggle'); // Envia o comando para o WebSocket
   } else {
     alert('Conexão perdida! Tente novamente quando a conexão for restabelecida.');
   }
 }
-
-// Gera os botões de dispositivo dinamicamente
-function generateDeviceButtons() {
-  const grid = document.querySelector('.grid');
-  for (let i = 0; i < %NUM_DEVICES%; i++) {
-    const gridItem = document.createElement('div');
-    gridItem.className = 'grid-item';
-    gridItem.innerHTML = `
-      <p>Dispositivo ${i + 1}</p>
-      <label class="switch">
-        <input type="checkbox" id="toggleBtn${i}" onchange="toggleDevice(${i})">
-        <span class="slider"></span>
-      </label>
-    `;
-    grid.appendChild(gridItem);
-  }
-}
-
-// Chama a função para gerar os botões quando a página carrega
-window.onload = generateDeviceButtons;
 </script>
 </body>
 </html>
