@@ -14,6 +14,7 @@
 //#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 //#define DHTTYPE DHT21   // DHT 21 (AM2301)
 
+bool deviceStates =  HIGH;
 
 // Função para configurar os pinos como INPUT e OUTPUT
 void setupGPIOs() {
@@ -26,6 +27,7 @@ void setupGPIOs() {
   // Configura o pino do sensor de umidade de solo
   pinMode(SOIL_SENSOR_PIN, INPUT);
 
+  digitalWrite(RELAY_PIN, deviceStates);  // Inicializa os relés desligados
 }
 
 #endif  // SETUPGPIOS_HPP
