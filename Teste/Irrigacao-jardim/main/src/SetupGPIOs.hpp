@@ -6,8 +6,8 @@
 // Definição dos pinos de entrada e saída
 #define RELAY_PIN 15
 #define RESET_BUTTON 05  // Botão de reset rede WiFi
-#define DHTPIN 27
-#define SOIL_SENSOR_PIN 33
+#define DHTPIN 13
+#define SOIL_SENSOR_PIN 12
 
 // Descomente qualquer tipo que você esteja usando!
 #define DHTTYPE DHT11  // DHT 11
