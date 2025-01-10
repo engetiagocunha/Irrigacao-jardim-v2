@@ -1,3 +1,6 @@
+
+#include <ESPmDNS.h>      // Biblioteca para mDNS
+#include <WiFiManager.h>  // Biblioteca para WiFiManager
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <DHT.h>
@@ -16,6 +19,9 @@
 #define LONG_PRESS_MODE 2000        // 2 segundos
 #define LONG_PRESS_DISPLAY 5000     // 5 segundos
 #define TEMP_MESSAGE_DURATION 1500  // 1.5 segundos
+
+
+WiFiManager wm;  // Instância global do WiFiManager
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 DHT dht(DHTPIN, DHT11);
@@ -41,6 +47,7 @@ struct ButtonControl {
   bool displayButtonPressed = false;
   bool displayBacklight = false;
   bool showingMessage = false;
+  bool modoResetWiFi = false;
 } buttonControl;
 
 // Funções de suporte
@@ -64,6 +71,98 @@ void salvarEstado() {
   preferences.putBool("relay", systemState.relayStatus);
 }
 
+void mostrarInfoWiFi() {
+  // Calcula a força do sinal em porcentagem
+  int rssi = WiFi.RSSI();
+  int signalStrength;
+
+  // Conversão de RSSI para porcentagem
+  if (rssi <= -100) {
+    signalStrength = 0;
+  } else if (rssi >= -50) {
+    signalStrength = 100;
+  } else {
+    signalStrength = 2 * (rssi + 100);
+  }
+
+  // Cria caracteres personalizados para blocos de sinal
+  byte signalBlocks[5][8] = {
+    { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1F },        // 1 bloco
+    { 0x0, 0x0, 0x0, 0x0, 0x0, 0x1F, 0x1F, 0x1F },      // 2 blocos
+    { 0x0, 0x0, 0x0, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F },    // 3 blocos
+    { 0x0, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F },  // 4 blocos
+    { 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F }  // 5 blocos (cheio)
+  };
+
+  // Registra os caracteres personalizados
+  for (int i = 0; i < 5; i++) {
+    lcd.createChar(i, signalBlocks[i]);
+  }
+
+  // Mostra informações no LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WIFI:");
+
+  // Desenha blocos de sinal
+  int numBlocks = map(signalStrength, 0, 100, 0, 5);
+  for (int i = 0; i < numBlocks; i++) {
+    lcd.setCursor(6 + i, 0);
+    lcd.write(byte(i));
+  }
+
+  // Mostra porcentagem
+  lcd.setCursor(0, 1);
+  if (WiFi.status() == WL_CONNECTED) {
+    lcd.print(WiFi.SSID());
+    lcd.print(" ");
+    lcd.print(signalStrength);
+    lcd.print("%");
+  } else {
+    lcd.print("Desconectado");
+  }
+}
+
+
+// Função para configurar o WiFiManager
+void setupWiFi() {
+  WiFi.mode(WIFI_STA);  // Define o modo Wi-Fi para estação (STA)
+  Serial.println("\nIniciando configuração do WiFi...");
+
+  // Configuração WiFiManager
+  bool wm_nonblocking = true;  // Define o modo não bloqueante
+  if (wm_nonblocking) wm.setConfigPortalBlocking(false);
+
+  // Menu customizado
+  std::vector<const char*> menu = { "wifi", "info", "exit" };
+  wm.setMenu(menu);
+  wm.setClass("invert");          // Define o tema invertido
+  wm.setConfigPortalTimeout(30);  // Tempo limite de 30 segundos
+
+  // Conectar automaticamente
+  bool res = wm.autoConnect("ESP3201-CONFIG", "12345678");
+  if (!res) {
+    Serial.println("Falha na conexão ou tempo limite esgotado");
+  } else {
+    Serial.println("Conectado com sucesso!");
+  }
+}
+
+// Função para resetar o wifi
+// Função de reset de WiFi melhorada
+void resetWiFi() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Resetando WiFi ...");
+
+  wm.resetSettings();  // Limpa configurações salvas
+
+  // Reinicia o dispositivo
+  delay(1000);
+  ESP.restart();
+}
+
+// Função para leitura de sensores de temperatura e umidade do ambiente e solo
 void lerSensores() {
   systemState.temperatura = dht.readTemperature();
   systemState.umidade = dht.readHumidity();
@@ -136,6 +235,7 @@ void verificarBotoes() {
     // Pressionamento longo
     if ((millis() - buttonControl.displayButtonStart > LONG_PRESS_DISPLAY) && buttonControl.displayButtonPressed) {
       mostrarMensagemTemporaria("Config Avancada");
+      resetWiFi();  // Chama resetWiFi com confirmação
       buttonControl.displayButtonPressed = false;
       while (digitalRead(BTN_DISPLAY) == LOW)
         ;
@@ -219,11 +319,7 @@ void atualizarDisplay() {
         break;
 
       case 3:  // Placeholder para Informações de Rede
-        lcd.setCursor(0, 0);
-        lcd.print("WIFI:");
-
-        lcd.setCursor(0, 1);
-        lcd.print("Conectando...");
+        mostrarInfoWiFi();
         break;
 
       case 4:  // Placeholder para Informações de Data/Hora
@@ -257,14 +353,17 @@ void setup() {
   dht.begin();
   Serial.begin(115200);
 
+  setupWiFi();
+
   sensorTicker.attach(3, lerSensores);
 }
 
 void loop() {
+
   verificarBotoes();
   controleLuzDisplay();
 
-  // Lógica de modo automático
+  // Lógica de irrigação automática
   if (systemState.modoAutomatico) {
     if (systemState.umidadeSolo < 45 && !systemState.relayStatus) {
       controleRele(true);
