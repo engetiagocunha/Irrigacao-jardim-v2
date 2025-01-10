@@ -157,75 +157,85 @@ void verificarBotoes() {
 }
 
 void atualizarDisplay() {
+  // Variáveis estáticas para comparação e redução de redraws
   static int ultimoDisplayMode = -1;
   static float ultimaTemperatura = -1;
   static float ultimaUmidade = -1;
   static float ultimaUmidadeSolo = -1;
-  static bool ultimoModoAutomatico = !systemState.modoAutomatico;
-  static bool ultimoRelayStatus = !systemState.relayStatus;
+  static bool ultimoModoAutomatico = false;
+  static bool ultimoRelayStatus = false;
 
   // Verifica se há mensagem temporária ativa
-  if (buttonControl.mostrandoMensagem && (millis() - buttonControl.tempoMensagem < 1500)) {
+  if (buttonControl.showingMessage && (millis() - buttonControl.messageStartTime < TEMP_MESSAGE_DURATION)) {
     return;
   }
 
-  buttonControl.mostrandoMensagem = false;
+  buttonControl.showingMessage = false;
 
-  // Só redesenha se houver mudança
-  bool needsUpdate =
+  // Verifica se precisa atualizar o display
+  bool precisaAtualizar =
     systemState.displayMode != ultimoDisplayMode || (systemState.displayMode == 0 && (systemState.temperatura != ultimaTemperatura || systemState.umidade != ultimaUmidade)) || (systemState.displayMode == 1 && (systemState.umidadeSolo != ultimaUmidadeSolo || systemState.modoAutomatico != ultimoModoAutomatico)) || (systemState.displayMode == 2 && systemState.relayStatus != ultimoRelayStatus);
 
-  if (needsUpdate) {
+  if (precisaAtualizar) {
     lcd.clear();
 
     switch (systemState.displayMode) {
-      case 0:
+      case 0:  // Temperatura e Umidade
         lcd.setCursor(0, 0);
         lcd.print("Temp: ");
         lcd.print(systemState.temperatura, 1);
         lcd.print("C");
+
         lcd.setCursor(0, 1);
         lcd.print("Umid: ");
         lcd.print(systemState.umidade, 1);
         lcd.print("%");
+
         ultimaTemperatura = systemState.temperatura;
         ultimaUmidade = systemState.umidade;
         break;
 
-      case 1:
+      case 1:  // Umidade do Solo e Modo de Operação
         lcd.setCursor(0, 0);
-        lcd.print("Umid Solo: ");
+        lcd.print("Solo: ");
         lcd.print(systemState.umidadeSolo, 1);
         lcd.print("%");
+
         lcd.setCursor(0, 1);
         lcd.print(systemState.modoAutomatico ? "Modo: Auto" : "Modo: Manual");
+
         ultimaUmidadeSolo = systemState.umidadeSolo;
         ultimoModoAutomatico = systemState.modoAutomatico;
         break;
 
-      case 2:
+      case 2:  // Estado do Relé
         lcd.setCursor(0, 0);
-        lcd.print("Estado Rele:");
+        lcd.print("Rele:");
+
         lcd.setCursor(0, 1);
         lcd.print(systemState.relayStatus ? "Ligado" : "Desligado");
+
         ultimoRelayStatus = systemState.relayStatus;
         break;
 
-      case 3:
+      case 3:  // Placeholder para Informações de Rede
         lcd.setCursor(0, 0);
         lcd.print("WIFI:");
+
         lcd.setCursor(0, 1);
-        lcd.print("IP: Configurando");
+        lcd.print("Conectando...");
         break;
 
-      case 4:
+      case 4:  // Placeholder para Informações de Data/Hora
         lcd.setCursor(0, 0);
-        lcd.print("DATA:");
+        lcd.print("Sistema:");
+
         lcd.setCursor(0, 1);
-        lcd.print("Hora: Carregando");
+        lcd.print("Inicializando");
         break;
     }
 
+    // Atualiza o modo de display atual
     ultimoDisplayMode = systemState.displayMode;
   }
 }
@@ -242,6 +252,8 @@ void setup() {
 
   lcd.init();
   lcd.backlight();
+  buttonControl.displayBacklight = true;
+
   dht.begin();
   Serial.begin(115200);
 
