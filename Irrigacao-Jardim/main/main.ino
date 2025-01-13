@@ -6,6 +6,8 @@
 #include <DHT.h>
 #include <Preferences.h>
 #include <Ticker.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 #define DHTPIN 13
 #define NUM_SOIL_SENSORS 2
@@ -28,8 +30,31 @@ DHT dht(DHTPIN, DHT11);
 Preferences preferences;
 Ticker sensorTicker;
 
+// Novas inclusões para NTP e agendamento
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -10800, 60000);
+
+bool agendamentoJaExecutado = false;
+// Variáveis globais adicionais para controle de tempo de irrigação
+unsigned long tempoIrrigacaoInicio = 0;
+const unsigned long DURACAO_MAXIMA_IRRIGACAO = 20 * 60 * 1000;  // 20 minutos em milissegundos
+
+// Estrutura para configurações de agendamento
+struct AgendamentoConfig {
+  int horaAtual = 0;
+  int minutoAtual = 0;
+  int diaSemanaAtual = 0;
+  int horaLigar = 0;
+  int minutoLigar = 0;
+  bool diasSemana[7] = { true };  // Seg, Ter, Qua, Qui, Sex, Sab, Dom
+} agendamento;
+
+const char* diasNomes[7] = { "Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom" };
+
+
 // Estado consolidado do sistema
 struct SystemState {
+  bool agendamentoAtivo = false;
   bool modoAutomatico = true;
   bool relayStatus = false;
   int displayMode = 0;
@@ -94,6 +119,7 @@ void mostrarInfoWiFi() {
     { 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F }  // 5 blocos (cheio)
   };
 
+
   // Registra os caracteres personalizados
   for (int i = 0; i < 5; i++) {
     lcd.createChar(i, signalBlocks[i]);
@@ -123,29 +149,127 @@ void mostrarInfoWiFi() {
   }
 }
 
+// Funções de agendamento
+void inicializarNTP() {
+  timeClient.begin();
+  timeClient.update();
+}
+
+void salvarConfigAgendamento() {
+  preferences.begin("agendamento", false);
+  preferences.putInt("hora", agendamento.horaLigar);
+  preferences.putInt("minuto", agendamento.minutoLigar);
+
+  // Salva dias da semana como inteiro de bits
+  uint8_t diasSalvar = 0;
+  for (int i = 0; i < 7; i++) {
+    if (agendamento.diasSemana[i]) {
+      diasSalvar |= (1 << i);
+    }
+  }
+  preferences.putUChar("diasSemana", diasSalvar);
+
+  preferences.end();
+}
+
+void carregarConfigAgendamento() {
+  preferences.begin("agendamento", true);
+  agendamento.horaLigar = preferences.getInt("hora", 0);
+  agendamento.minutoLigar = preferences.getInt("minuto", 0);
+
+  uint8_t diasCarregados = preferences.getUChar("diasSemana", 0);
+  for (int i = 0; i < 7; i++) {
+    agendamento.diasSemana[i] = (diasCarregados & (1 << i)) != 0;
+  }
+
+  preferences.end();
+}
+
+bool verificarAgendamento() {
+  timeClient.update();
+  agendamento.horaAtual = timeClient.getHours();
+  agendamento.minutoAtual = timeClient.getMinutes();
+  agendamento.diaSemanaAtual = timeClient.getDay();
+
+  // Verifica se o dia atual está nos dias programados
+  bool diaCorreto = agendamento.diasSemana[agendamento.diaSemanaAtual];
+  bool horarioCorreto = (agendamento.horaAtual == agendamento.horaLigar && agendamento.minutoAtual == agendamento.minutoLigar);
+
+  return diaCorreto && horarioCorreto;
+}
+
+void atualizarDataHora() {
+  timeClient.update();
+
+  // Atualiza variáveis globais de hora e minuto
+  agendamento.horaAtual = timeClient.getHours();
+  agendamento.minutoAtual = timeClient.getMinutes();
+  agendamento.diaSemanaAtual = timeClient.getDay();
+}
+
 
 // Função para configurar o WiFiManager
 void setupWiFi() {
-  WiFi.mode(WIFI_STA);  // Define o modo Wi-Fi para estação (STA)
+  WiFi.mode(WIFI_STA);
   Serial.println("\nIniciando configuração do WiFi...");
 
-  // Configuração WiFiManager
-  bool wm_nonblocking = true;  // Define o modo não bloqueante
+  bool wm_nonblocking = true;
   if (wm_nonblocking) wm.setConfigPortalBlocking(false);
 
-  // Menu customizado
-  std::vector<const char*> menu = { "wifi", "info", "exit" };
+  // Menu customizado com nova opção
+  std::vector<const char*> menu = { "wifi", "info", "param", "exit" };
   wm.setMenu(menu);
-  wm.setClass("invert");          // Define o tema invertido
-  wm.setConfigPortalTimeout(30);  // Tempo limite de 30 segundos
+  wm.setClass("invert");
+  wm.setConfigPortalTimeout(30);
+
+  // Parâmetros customizados para agendamento
+  WiFiManagerParameter custom_hora("hora", "Hora para Ligar",
+                                   String(agendamento.horaLigar).c_str(), 2);
+  WiFiManagerParameter custom_minuto("minuto", "Minuto para Ligar",
+                                     String(agendamento.minutoLigar).c_str(), 2);
+
+  wm.addParameter(&custom_hora);
+  wm.addParameter(&custom_minuto);
+
+  // Checkbox para dias da semana
+  char htmlDias[500] = "";
+  for (int i = 0; i < 7; i++) {
+    char checkbox[100];
+    snprintf(checkbox, sizeof(checkbox),
+             "<label><input type='checkbox' name='dia%d' value='1' %s>%s</label><br>",
+             i, agendamento.diasSemana[i] ? "checked" : "", diasNomes[i]);
+    strcat(htmlDias, checkbox);
+  }
+  WiFiManagerParameter custom_dias("dias", "Dias da Semana", htmlDias, 500);
+  wm.addParameter(&custom_dias);
 
   // Conectar automaticamente
   bool res = wm.autoConnect("ESP3201-CONFIG", "12345678");
   if (!res) {
     Serial.println("Falha na conexão ou tempo limite esgotado");
-  } else {
-    Serial.println("Conectado com sucesso!");
+    return;
   }
+
+  Serial.println("Conectado com sucesso!");
+
+  // Verifica se entrou no portal de configuração
+  if (wm.getConfigPortalActive()) {
+    // Salva parâmetros
+    agendamento.horaLigar = atoi(custom_hora.getValue());
+    agendamento.minutoLigar = atoi(custom_minuto.getValue());
+
+    // Salva dias da semana
+    for (int i = 0; i < 7; i++) {
+      char paramName[10];
+      snprintf(paramName, sizeof(paramName), "dia%d", i);
+      agendamento.diasSemana[i] = (wm.server->hasArg(paramName) && wm.server->arg(paramName) == "1");
+    }
+
+    salvarConfigAgendamento();
+  }
+
+  // Inicializa NTP após conexão
+  inicializarNTP();
 }
 
 // Função para resetar o wifi
@@ -257,13 +381,14 @@ void verificarBotoes() {
 }
 
 void atualizarDisplay() {
-  // Variáveis estáticas para comparação e redução de redraws
+  // Variáveis estáticas para comparação
   static int ultimoDisplayMode = -1;
   static float ultimaTemperatura = -1;
   static float ultimaUmidade = -1;
   static float ultimaUmidadeSolo = -1;
   static bool ultimoModoAutomatico = false;
   static bool ultimoRelayStatus = false;
+  static int ultimoSegundo = -1;
 
   // Verifica se há mensagem temporária ativa
   if (buttonControl.showingMessage && (millis() - buttonControl.messageStartTime < TEMP_MESSAGE_DURATION)) {
@@ -272,27 +397,49 @@ void atualizarDisplay() {
 
   buttonControl.showingMessage = false;
 
+  // Atualiza o cliente NTP para manter o tempo sincronizado
+  timeClient.update();
+
+  // Obtém o segundo atual
+  int segundoAtual = timeClient.getSeconds();
+
+  // Se mudou o modo de display, limpa a tela completamente
+  if (systemState.displayMode != ultimoDisplayMode) {
+    lcd.clear();
+  }
+
   // Verifica se precisa atualizar o display
   bool precisaAtualizar =
-    systemState.displayMode != ultimoDisplayMode || (systemState.displayMode == 0 && (systemState.temperatura != ultimaTemperatura || systemState.umidade != ultimaUmidade)) || (systemState.displayMode == 1 && (systemState.umidadeSolo != ultimaUmidadeSolo || systemState.modoAutomatico != ultimoModoAutomatico)) || (systemState.displayMode == 2 && systemState.relayStatus != ultimoRelayStatus);
+    systemState.displayMode != ultimoDisplayMode || segundoAtual != ultimoSegundo ||  // Adiciona verificação de segundos
+    (systemState.displayMode == 0 && (systemState.temperatura != ultimaTemperatura || systemState.umidade != ultimaUmidade)) || (systemState.displayMode == 1 && (systemState.umidadeSolo != ultimaUmidadeSolo || systemState.modoAutomatico != ultimoModoAutomatico)) || (systemState.displayMode == 2 && systemState.relayStatus != ultimoRelayStatus);
 
   if (precisaAtualizar) {
-    lcd.clear();
-
     switch (systemState.displayMode) {
-      case 0:  // Temperatura e Umidade
-        lcd.setCursor(0, 0);
-        lcd.print("Temp: ");
-        lcd.print(systemState.temperatura, 1);
-        lcd.print("C");
+      case 0:  // Temperatura, Umidade e Hora
+        // Atualiza apenas a linha do tempo se só o tempo mudou
+        if (segundoAtual != ultimoSegundo) {
+          lcd.setCursor(0, 1);
+          lcd.print("Hora:");
+          char horaLocal[20];
+          snprintf(horaLocal, sizeof(horaLocal), "%02d:%02d:%02d",
+                   agendamento.horaAtual,
+                   agendamento.minutoAtual,
+                   segundoAtual);
+          lcd.print(horaLocal);
+        }
 
-        lcd.setCursor(0, 1);
-        lcd.print("Umid: ");
-        lcd.print(systemState.umidade, 1);
-        lcd.print("%");
+        // Se outros valores mudaram, atualiza a primeira linha
+        if (systemState.temperatura != ultimaTemperatura || systemState.umidade != ultimaUmidade || systemState.displayMode != ultimoDisplayMode) {
+          lcd.setCursor(0, 0);
+          lcd.print("T:");
+          lcd.print(systemState.temperatura, 1);
+          lcd.print("C  ");
 
-        ultimaTemperatura = systemState.temperatura;
-        ultimaUmidade = systemState.umidade;
+          lcd.setCursor(8, 0);
+          lcd.print("U:");
+          lcd.print(systemState.umidade, 1);
+          lcd.print("%");
+        }
         break;
 
       case 1:  // Umidade do Solo e Modo de Operação
@@ -322,17 +469,37 @@ void atualizarDisplay() {
         mostrarInfoWiFi();
         break;
 
-      case 4:  // Placeholder para Informações de Data/Hora
+      case 4:  // Informações de Agendamento
         lcd.setCursor(0, 0);
-        lcd.print("Sistema:");
+        // Formata hora com zero à esquerda se necessário
+        char horaFormatada[6];
+        snprintf(horaFormatada, sizeof(horaFormatada), "%02d:%02d",
+                 agendamento.horaLigar, agendamento.minutoLigar);
+        lcd.print("Prog: ");
+        lcd.print(horaFormatada);
 
         lcd.setCursor(0, 1);
-        lcd.print("Inicializando");
+        // Mostra dias selecionados
+        String diasSelecionados = "";
+        for (int i = 0; i < 7; i++) {
+          if (agendamento.diasSemana[i]) {
+            diasSelecionados += diasNomes[i][0];  // Primeira letra do dia
+          } else {
+            diasSelecionados += "-";  // Ou espaço, se preferir
+          }
+        }
+        lcd.print(diasSelecionados);
         break;
     }
 
-    // Atualiza o modo de display atual
+    // Atualiza as variáveis de controle
+    ultimoSegundo = segundoAtual;
     ultimoDisplayMode = systemState.displayMode;
+    ultimaTemperatura = systemState.temperatura;
+    ultimaUmidade = systemState.umidade;
+    ultimaUmidadeSolo = systemState.umidadeSolo;
+    ultimoModoAutomatico = systemState.modoAutomatico;
+    ultimoRelayStatus = systemState.relayStatus;
   }
 }
 
@@ -348,6 +515,7 @@ void setup() {
 
   lcd.init();
   lcd.backlight();
+
   buttonControl.displayBacklight = true;
 
   dht.begin();
@@ -355,27 +523,69 @@ void setup() {
 
   setupWiFi();
 
+  timeClient.begin();
+  timeClient.update();
+
+  // Carregar configuração de agendamento
+  carregarConfigAgendamento();
+
   sensorTicker.attach(3, lerSensores);
 }
 
 void loop() {
-
+  wm.process();
   verificarBotoes();
   controleLuzDisplay();
 
-  // Lógica de irrigação automática
+  static unsigned long ultimaAtualizacaoTempo = 0;
+  unsigned long tempoAtual = millis();
+
+  // Atualiza o tempo a cada 100ms em vez de 1 segundo
+  if (tempoAtual - ultimaAtualizacaoTempo >= 100) {
+    atualizarDataHora();
+    atualizarDisplay();
+    ultimaAtualizacaoTempo = tempoAtual;
+  }
+
+  // Lógica de irrigação com agendamento
+  if (systemState.modoAutomatico) {
+
+    // Verifica se está na hora e dia programados
+    bool horarioAgendado = verificarAgendamento();
+
+    // Condições para ligar a irrigação:
+    // 1. Umidade do solo abaixo de 40%
+    // 2. Está no horário e dia agendados
+    // 3. Relé não está ligado
+    if (systemState.umidadeSolo < 40 && horarioAgendado && !systemState.relayStatus) {
+      controleRele(true);
+      tempoIrrigacaoInicio = millis();  // Marca o início da irrigação
+    }
+
+    // Condições para desligar a irrigação:
+    // 1. Umidade do solo atingiu 100%
+    // 2. Ou passou 20 minutos desde o início
+    if (systemState.relayStatus) {
+      if (systemState.umidadeSolo >= 100 || (millis() - tempoIrrigacaoInicio >= DURACAO_MAXIMA_IRRIGACAO)) {
+        controleRele(false);
+      }
+    }
+  }
+
+
+  /*// Lógica de irrigação automática
   if (systemState.modoAutomatico) {
     if (systemState.umidadeSolo < 45 && !systemState.relayStatus) {
       controleRele(true);
     } else if (systemState.umidadeSolo >= 70 && systemState.relayStatus) {
       controleRele(false);
     }
-  }
+  }*/
 
   // Atualização de display
   if (!buttonControl.showingMessage || (millis() - buttonControl.messageStartTime > TEMP_MESSAGE_DURATION)) {
     atualizarDisplay();
   }
 
-  delay(100);
+  yield();  // Permite que outras tarefas do sistema sejam executadas
 }
