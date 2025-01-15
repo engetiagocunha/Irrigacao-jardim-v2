@@ -44,12 +44,10 @@ struct AgendamentoConfig {
   int horaAtual = 0;
   int minutoAtual = 0;
   int diaSemanaAtual = 0;
-  int horaLigar = 0;
-  int minutoLigar = 0;
-  bool diasSemana[7] = { true };  // Seg, Ter, Qua, Qui, Sex, Sab, Dom
+  int configHoraInicio = 0;          // Hora de início
+  int configMinutoInicio = 0;        // Minuto de início
+  bool diasDaSemana[7] = { false };  // Configuração para os dias da semana (0 a 6)
 } agendamento;
-
-const char* diasNomes[7] = { "Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom" };
 
 
 // Estado consolidado do sistema
@@ -155,31 +153,32 @@ void inicializarNTP() {
   timeClient.update();
 }
 
+// Modificações na função salvarConfigAgendamento():
 void salvarConfigAgendamento() {
-  preferences.begin("agendamento", false);
-  preferences.putInt("hora", agendamento.horaLigar);
-  preferences.putInt("minuto", agendamento.minutoLigar);
+  // Salvar hora e minuto com chaves mais específicas
+  preferences.putInt("horaLigar", agendamento.horaLigar);
+  preferences.putInt("minutoLigar", agendamento.minutoLigar);
 
-  // Salva dias da semana como inteiro de bits
-  uint8_t diasSalvar = 0;
+  // Salvar dias da semana de forma mais robusta
   for (int i = 0; i < 7; i++) {
-    if (agendamento.diasSemana[i]) {
-      diasSalvar |= (1 << i);
-    }
+    String key = "dia_" + String(i);
+    preferences.putBool(key.c_str(), agendamento.diasSemana[i]);
   }
-  preferences.putUChar("diasSemana", diasSalvar);
 
   preferences.end();
 }
 
+// Modificações na função carregarConfigAgendamento():
 void carregarConfigAgendamento() {
-  preferences.begin("agendamento", true);
-  agendamento.horaLigar = preferences.getInt("hora", 0);
-  agendamento.minutoLigar = preferences.getInt("minuto", 0);
 
-  uint8_t diasCarregados = preferences.getUChar("diasSemana", 0);
+  // Carregar hora e minuto
+  agendamento.horaLigar = preferences.getInt("horaLigar", 0);
+  agendamento.minutoLigar = preferences.getInt("minutoLigar", 0);
+
+  // Carregar dias da semana de forma mais segura
   for (int i = 0; i < 7; i++) {
-    agendamento.diasSemana[i] = (diasCarregados & (1 << i)) != 0;
+    String key = "dia_" + String(i);
+    agendamento.diasSemana[i] = preferences.getBool(key.c_str(), false);
   }
 
   preferences.end();
@@ -187,15 +186,17 @@ void carregarConfigAgendamento() {
 
 bool verificarAgendamento() {
   timeClient.update();
-  agendamento.horaAtual = timeClient.getHours();
-  agendamento.minutoAtual = timeClient.getMinutes();
-  agendamento.diaSemanaAtual = timeClient.getDay();
 
-  // Verifica se o dia atual está nos dias programados
-  bool diaCorreto = agendamento.diasSemana[agendamento.diaSemanaAtual];
-  bool horarioCorreto = (agendamento.horaAtual == agendamento.horaLigar && agendamento.minutoAtual == agendamento.minutoLigar);
+  if (agendamento.horaAtual == agendamento.horaLigar && agendamento.minutoAtual == agendamento.minutoLigar && agendamento.diasSemana[agendamento.diaSemanaAtual]) {
 
-  return diaCorreto && horarioCorreto;
+    if (!agendamentoJaExecutado) {
+      agendamentoJaExecutado = true;
+      return true;
+    }
+  } else {
+    agendamentoJaExecutado = false;
+  }
+  return false;
 }
 
 void atualizarDataHora() {
@@ -209,68 +210,87 @@ void atualizarDataHora() {
 
 
 // Função para configurar o WiFiManager
+// Função para configurar o WiFiManager com correções
 void setupWiFi() {
-  WiFi.mode(WIFI_STA);
-  Serial.println("\nIniciando configuração do WiFi...");
+  WiFi.mode(WIFI_STA);  // Define o modo de operação WiFi
 
-  bool wm_nonblocking = true;
-  if (wm_nonblocking) wm.setConfigPortalBlocking(false);
-
-  // Menu customizado com nova opção
-  std::vector<const char*> menu = { "wifi", "info", "param", "exit" };
+  // Configuração do menu personalizado no portal
+  std::vector<const char*> menu = { "wifi", "info", "param", "sep", "restart", "exit" };
   wm.setMenu(menu);
-  wm.setClass("invert");
-  wm.setConfigPortalTimeout(30);
+  wm.setClass("invert");  // Define o estilo do portal de configuração
 
-  // Parâmetros customizados para agendamento
-  WiFiManagerParameter custom_hora("hora", "Hora para Ligar",
-                                   String(agendamento.horaLigar).c_str(), 2);
-  WiFiManagerParameter custom_minuto("minuto", "Minuto para Ligar",
-                                     String(agendamento.minutoLigar).c_str(), 2);
+  // Criar parâmetros customizados com valores atuais
+  WiFiManagerParameter custom_hora(
+    "hora", "Hora para Ligar (0-23)",
+    String(agendamento.horaLigar).c_str(), 3);  // Hora (0-23)
+  WiFiManagerParameter custom_minuto(
+    "minuto", "Minuto para Ligar (0-59)",
+    String(agendamento.minutoLigar).c_str(), 3);  // Minuto (0-59)
 
+  // Criar string representando os dias da semana (ex: "1010110")
+  String diasStr = "";
+  for (int i = 0; i < 7; i++) {
+    diasStr += agendamento.diasSemana[i] ? "1" : "0";
+  }
+  WiFiManagerParameter custom_dias(
+    "dias", "Dias (7 dígitos, 1=ativo, 0=inativo)",
+    diasStr.c_str(), 8);  // 7 dígitos para os dias da semana
+
+  // Adicionar os parâmetros customizados ao WiFiManager
   wm.addParameter(&custom_hora);
   wm.addParameter(&custom_minuto);
-
-  // Checkbox para dias da semana
-  char htmlDias[500] = "";
-  for (int i = 0; i < 7; i++) {
-    char checkbox[100];
-    snprintf(checkbox, sizeof(checkbox),
-             "<label><input type='checkbox' name='dia%d' value='1' %s>%s</label><br>",
-             i, agendamento.diasSemana[i] ? "checked" : "", diasNomes[i]);
-    strcat(htmlDias, checkbox);
-  }
-  WiFiManagerParameter custom_dias("dias", "Dias da Semana", htmlDias, 500);
   wm.addParameter(&custom_dias);
 
-  // Conectar automaticamente
-  bool res = wm.autoConnect("ESP3201-CONFIG", "12345678");
+  // Tentar conectar automaticamente ou iniciar o portal de configuração
+  bool res = wm.autoConnect("ESP_CONFIG_AP", "password123");
+
   if (!res) {
-    Serial.println("Falha na conexão ou tempo limite esgotado");
-    return;
-  }
+    Serial.println("Falha na conexão WiFi");
+    // Opcional: Reiniciar o dispositivo se necessário
+    // ESP.restart();
+  } else {
+    Serial.println("Conectado ao WiFi com sucesso");
 
-  Serial.println("Conectado com sucesso!");
+    // Processar configurações após a conexão bem-sucedida
+    if (wm.getConfigPortalActive()) {
+      // Validar e salvar configurações
 
-  // Verifica se entrou no portal de configuração
-  if (wm.getConfigPortalActive()) {
-    // Salva parâmetros
-    agendamento.horaLigar = atoi(custom_hora.getValue());
-    agendamento.minutoLigar = atoi(custom_minuto.getValue());
+      // Validar e salvar a hora
+      int novaHora = atoi(custom_hora.getValue());
+      if (novaHora >= 0 && novaHora <= 23) {
+        agendamento.horaLigar = novaHora;
+      } else {
+        Serial.println("Hora inválida");
+      }
 
-    // Salva dias da semana
-    for (int i = 0; i < 7; i++) {
-      char paramName[10];
-      snprintf(paramName, sizeof(paramName), "dia%d", i);
-      agendamento.diasSemana[i] = (wm.server->hasArg(paramName) && wm.server->arg(paramName) == "1");
+      // Validar e salvar o minuto
+      int novoMinuto = atoi(custom_minuto.getValue());
+      if (novoMinuto >= 0 && novoMinuto <= 59) {
+        agendamento.minutoLigar = novoMinuto;
+      } else {
+        Serial.println("Minuto inválido");
+      }
+
+      // Processar e salvar os dias da semana
+      const char* diasConfig = custom_dias.getValue();
+      for (int i = 0; i < 7; i++) {
+        if (diasConfig[i] == '1' || diasConfig[i] == '0') {
+          agendamento.diasSemana[i] = (diasConfig[i] == '1');
+        } else {
+          Serial.printf("Caractere inválido para dia[%d]: %c\n", i, diasConfig[i]);
+        }
+      }
+
+      // Salvar configurações na memória persistente
+      salvarConfigAgendamento();
     }
 
-    salvarConfigAgendamento();
+    // Configurar sincronização NTP
+    inicializarNTP();
   }
-
-  // Inicializa NTP após conexão
-  inicializarNTP();
 }
+
+
 
 // Função para resetar o wifi
 // Função de reset de WiFi melhorada
@@ -278,6 +298,7 @@ void resetWiFi() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Resetando WiFi ...");
+
 
   wm.resetSettings();  // Limpa configurações salvas
 
@@ -471,22 +492,15 @@ void atualizarDisplay() {
 
       case 4:  // Informações de Agendamento
         lcd.setCursor(0, 0);
-        // Formata hora com zero à esquerda se necessário
         char horaFormatada[6];
-        snprintf(horaFormatada, sizeof(horaFormatada), "%02d:%02d",
-                 agendamento.horaLigar, agendamento.minutoLigar);
+        snprintf(horaFormatada, sizeof(horaFormatada), "%02d:%02d", agendamento.horaLigar, agendamento.minutoLigar);
         lcd.print("Prog: ");
         lcd.print(horaFormatada);
 
         lcd.setCursor(0, 1);
-        // Mostra dias selecionados
         String diasSelecionados = "";
         for (int i = 0; i < 7; i++) {
-          if (agendamento.diasSemana[i]) {
-            diasSelecionados += diasNomes[i][0];  // Primeira letra do dia
-          } else {
-            diasSelecionados += "-";  // Ou espaço, se preferir
-          }
+          diasSelecionados += agendamento.diasSemana[i] ? diasNomes[i][0] : '-';
         }
         lcd.print(diasSelecionados);
         break;
@@ -508,10 +522,12 @@ void setup() {
   pinMode(BTN_MODE, INPUT_PULLUP);
   pinMode(BTN_DISPLAY, INPUT_PULLUP);
 
-  preferences.begin("irrigacao", false);
+  preferences.begin("myApp", false);
   systemState.modoAutomatico = preferences.getBool("modoAuto", true);
   systemState.relayStatus = preferences.getBool("relay", false);
   digitalWrite(RELAY_PIN, systemState.relayStatus);
+
+  carregarConfiguracoes();   
 
   lcd.init();
   lcd.backlight();
